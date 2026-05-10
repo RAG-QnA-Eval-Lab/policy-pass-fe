@@ -83,49 +83,25 @@ r = httpx.post(f"{API_BASE_URL}/ask", json={"query": "청년 주거 정책"}, ti
 data = r.json()
 ```
 
-### 테스트
+### 새 라이브러리 추가 시
 
-```bash
-pytest
+새 패키지를 설치했다면 **반드시 `pyproject.toml`에 추가**해야 배포에 반영됩니다.
+
+```toml
+# pyproject.toml
+
+dependencies = [
+    "streamlit>=1.38",
+    "httpx>=0.27",
+    "새패키지>=1.0",          # ← 여기에 추가
+]
 ```
 
-## 배포 (CI/CD)
+> Dockerfile은 수정할 필요 없습니다. `pip install "."`이 pyproject.toml을 자동으로 읽습니다.
 
-### Step 1: Daehyun(인프라 담당)에게 받아야 할 것
+## 배포 전 로컬 Docker 테스트
 
-| 항목 | 설명 |
-|------|------|
-| AWS Secret Access Key | `toby` IAM 사용자의 Secret Key (대면 전달) |
-| App Runner 서비스 ARN | `rag-qa-ui` 서비스의 ARN |
-| API 서비스 URL | 백엔드 App Runner 서비스 URL (`API_BASE_URL`에 필요) |
-
-### Step 2: AWS CLI 프로필 설정
-
-```bash
-aws configure --profile rag-qa
-# AWS Access Key ID: Daehyun에게 문의
-# AWS Secret Access Key: Daehyun에게 문의
-# Default region name: ap-northeast-2
-# Default output format: json
-```
-
-검증:
-```bash
-aws sts get-caller-identity --profile rag-qa
-# Account: 355206939988 이 나와야 함
-```
-
-### Step 3: GitHub Secrets 등록
-
-레포 → **Settings** → **Secrets and variables** → **Actions**:
-
-| Secret Name | 값 | 설명 |
-|-------------|-----|------|
-| `AWS_ACCESS_KEY_ID` | Daehyun에게 문의 | AWS IAM Access Key |
-| `AWS_SECRET_ACCESS_KEY` | Daehyun에게 문의 | AWS IAM Secret Key |
-| `APPRUNNER_SERVICE_ARN` | Daehyun에게 문의 | App Runner UI 서비스 ARN |
-
-### Step 4: 로컬 Docker 빌드 테스트
+배포 환경과 동일한 조건에서 테스트하려면 [Docker Desktop](https://www.docker.com/products/docker-desktop/)을 설치하고 아래를 실행하세요:
 
 ```bash
 docker build -t rag-ui .
@@ -133,35 +109,15 @@ docker run -p 8501:8501 -e API_BASE_URL=http://host.docker.internal:8080 rag-ui
 # http://localhost:8501 접속 → Streamlit UI 표시
 ```
 
-### 배포 흐름
+> `host.docker.internal`은 Docker 컨테이너에서 호스트(로컬) 머신에 접근하는 주소입니다. 백엔드가 로컬에서 실행 중이어야 합니다.
 
-```
-main 브랜치에 push (또는 수동 트리거)
-    ↓
-GitHub Actions 실행
-    ↓
-Docker 이미지 빌드
-    ↓
-ECR (rag-ui)에 push
-    ↓
-App Runner 자동 재배포
-```
+## 배포
 
-- **main 브랜치에 push하면 자동 배포됩니다**
+- **main 브랜치에 push하면 자동 배포됩니다** (CI/CD는 인프라 담당이 관리)
 - PR을 먼저 만들고 리뷰 후 머지하세요
-- 수동 배포: GitHub → Actions 탭 → Run workflow
-
-### 배포 시 환경변수
-
-App Runner 서비스에서 아래 환경변수가 설정됩니다 (인프라 담당이 관리):
-
-| 변수 | 값 |
-|------|-----|
-| `API_BASE_URL` | `https://{API App Runner 서비스 URL}` |
 
 ## 주의사항
 
-- **API 백엔드가 먼저 배포되어 있어야 합니다** → `API_BASE_URL`이 유효해야 함
 - **시크릿을 코드에 하드코딩하지 마세요** → `.env` 사용
 - **`.env` 파일은 절대 커밋하지 마세요** → `.gitignore`에 포함되어 있습니다
 
