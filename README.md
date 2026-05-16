@@ -40,7 +40,7 @@ nvm use 20
 ### 2. 의존성 설치
 
 ```bash
-npm ci
+npm install
 ```
 
 ### 3. 환경변수 설정
