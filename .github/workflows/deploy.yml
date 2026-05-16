@@ -1,4 +1,4 @@
-name: Deploy UI to EC2
+name: Deploy UI to S3 + CloudFront
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
 
 env:
   AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: rag-ui
 
 jobs:
   deploy:
@@ -15,29 +14,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: npm run build
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: ecr-login
-
-      - name: Build and push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Sync to S3 (hashed assets)
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          aws s3 sync dist/ s3://${{ secrets.UI_S3_BUCKET }}/ \
+            --delete \
+            --exclude "index.html" \
+            --exclude "*.json" \
+            --cache-control "max-age=31536000, immutable"
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: ./deploy.sh
+      - name: Sync to S3 (index.html + manifests)
+        run: |
+          aws s3 cp dist/index.html s3://${{ secrets.UI_S3_BUCKET }}/index.html \
+            --cache-control "no-cache, must-revalidate"
+          aws s3 sync dist/ s3://${{ secrets.UI_S3_BUCKET }}/ \
+            --exclude "*" \
+            --include "*.json" \
+            --cache-control "no-cache, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
